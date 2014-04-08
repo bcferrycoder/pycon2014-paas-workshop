@@ -1,0 +1,21 @@
+#   generate userlist in e-lisp:   (dotimes (i 20) (insert (format "\nuser%d:user%d:%d:1601:PaaS Pycon %d:/home/user%d:/bin/bash" i i i i i )))
+user0:user0:0:1601:PaaS Pycon 0:/home/user0:/bin/bash
+user1:user1:1:1601:PaaS Pycon 1:/home/user1:/bin/bash
+user2:user2:2:1601:PaaS Pycon 2:/home/user2:/bin/bash
+user3:user3:3:1601:PaaS Pycon 3:/home/user3:/bin/bash
+user4:user4:4:1601:PaaS Pycon 4:/home/user4:/bin/bash
+user5:user5:5:1601:PaaS Pycon 5:/home/user5:/bin/bash
+user6:user6:6:1601:PaaS Pycon 6:/home/user6:/bin/bash
+user7:user7:7:1601:PaaS Pycon 7:/home/user7:/bin/bash
+user8:user8:8:1601:PaaS Pycon 8:/home/user8:/bin/bash
+user9:user9:9:1601:PaaS Pycon 9:/home/user9:/bin/bash
+user10:user10:10:1601:PaaS Pycon 10:/home/user10:/bin/bash
+user11:user11:11:1601:PaaS Pycon 11:/home/user11:/bin/bash
+user12:user12:12:1601:PaaS Pycon 12:/home/user12:/bin/bash
+user13:user13:13:1601:PaaS Pycon 13:/home/user13:/bin/bash
+user14:user14:14:1601:PaaS Pycon 14:/home/user14:/bin/bash
+user15:user15:15:1601:PaaS Pycon 15:/home/user15:/bin/bash
+user16:user16:16:1601:PaaS Pycon 16:/home/user16:/bin/bash
+user17:user17:17:1601:PaaS Pycon 17:/home/user17:/bin/bash
+user18:user18:18:1601:PaaS Pycon 18:/home/user18:/bin/bash
+user19:user19:19:1601:PaaS Pycon 19:/home/user19:/bin/bash
