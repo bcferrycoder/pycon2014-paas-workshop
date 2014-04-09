@@ -1,7 +1,7 @@
-build second cluster
-add docker users
+add docker users in docker group
+slides with hostnames
 
-clusters
+INTRO
 
 Include "round" questions:   name/company/job/cloud/docker/paas
 docker unveiling
@@ -10,21 +10,27 @@ pyJVM
 not a product talk
 ski game
 this is not about python
-currency converter and background
-
+currency converter and lightning momet
 talk about microcloud (install vbox?)
 
-add survey
-
-ADMIN STUFF TO DO?
+add survey: http://lp.activestate.com/pycon-2014-evaluation/
 
 LECTURES
 
+clusters
+microcloud
+containers/docker
+scaling
+security
+
+
 DEMOS
 
+app store
 hpcs stackato creation
 add to cluster
 logging
+admin
 
 WORKSHOPS
 
@@ -35,5 +41,5 @@ WORKSHOPS
 5. SSO with apachebench (use docker system for this)
 6. admin
 7. install microcloud
-
+8. 
 
