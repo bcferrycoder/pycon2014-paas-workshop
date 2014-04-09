@@ -1,4 +1,6 @@
 #   generate userlist in e-lisp:   (dotimes (i 20) (insert (format "\nuser%d:user%d:%d:1601:PaaS Pycon %d:/home/user%d:/bin/bash" i i i i i )))
+# (dotimes (i 50) (insert (format "\n0 user%d@stackato-py.con {stackato-pycon}" i)))
+# (dotimes (i 50) (insert (format "\n0\t pyconuser%d@stackato-py.con {stackato-pycon}" i)))
 user0:user0:0:1601:PaaS Pycon 0:/home/user0:/bin/bash
 user1:user1:1:1601:PaaS Pycon 1:/home/user1:/bin/bash
 user2:user2:2:1601:PaaS Pycon 2:/home/user2:/bin/bash

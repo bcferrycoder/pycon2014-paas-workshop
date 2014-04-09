@@ -1,0 +1,317 @@
+#!/usr/bin/env tclsh
+# -*- tcl -*-
+# populate a stackato environment with test users and projects
+
+# Usage:
+#   populate $target
+# Args:
+#   target: either fill api.stackato-xxxx.local or stackato-xxxx (will add api.local)
+
+package require Tcl 8.5
+package require json
+package require http
+package require fileutil
+package require tls
+
+proc usage {} {
+    set base [file tail $::argv0]
+    puts stderr "usage: $base <target> ?options?
+    -u|--user     <user>     # first user to create
+    -p|--password <password> # password for user and system (if not changed)"
+    exit 1
+}
+
+# XXX target is either first arg to script or api.$env(VMNAME).local
+# XXX set main user and password for all user
+array set G {
+    TARGET ""
+    TOKEN ""
+    USER  "johnw"
+    EMAIL "johnw@activestate.com"
+    PASS  "pycon-paas"
+    ORG   "stackato-pycon"
+    SPACE "pycon"
+    VERBOSE 0
+    PUSH "node-env"
+}
+# Quasi standard env VMNAME points to dev VM
+if {[info exists ::env(VMNAME)]} { set G(TARGET) $env(VMNAME) }
+
+# XXX find stackato and git on PATH
+set G(STACKATO) [auto_execok stackato]
+set G(GIT) [lindex [auto_execok git] 0] ; # Windows oddity - use lindex
+
+if {![file exists $G(STACKATO)]} {
+    puts stderr "unknown stackato executable '$G(STACKATO)'"
+    exit 1
+}
+
+proc getargs {argv} {
+    set ::G(TARGET) [lindex $argv 0]
+    if {[llength $argv] < 1 || ([llength $argv] % 2)==0} { usage }
+    foreach {key val} [lrange $argv 1 end] {
+	switch -glob $key {
+	    -u - --user  { set ::G(USER) $val }
+	    -p - --pass* { set ::G(PASS) $val }
+	    --push { set ::G(PUSH) $val }
+	    -v - --verbose { set ::G(VERBOSE) [string is true -strict $val] }
+	    default { usage }
+	}
+    }
+}
+getargs $::argv
+
+if {$G(TARGET) eq ""} { usage }
+if {![string match *.* $G(TARGET)]} { set G(TARGET) api.$G(TARGET).local }
+
+# Use ssl and request only json data to accept
+::http::register https 443 ::tls::socket
+::http::config -accept application/json
+
+proc dputs {args} { if {$::G(VERBOSE)} { puts {*}$args } }
+
+proc geturl {url args} {
+    if {[info exists ::G(TOKEN)] && $::G(TOKEN) ne ""} {
+	# Add Auth header when we have a token
+	dict lappend args -headers Authorization $::G(TOKEN)
+    }
+    set tok [http::geturl $url {*}$args]
+    http::wait $tok
+    set jsondata [http::data $tok]
+    http::cleanup $tok
+    if {[catch {json::json2dict $jsondata} data]} {
+	return -code error "Error translating json result:\
+$data\n[string replace $jsondata 30 end ...]"
+    }
+    return $data; # dict format
+}
+
+proc first-user {user email passwd org space {retry 1}} {
+    # Checks whether a first user exists, otherwise makes the call similar
+    # to filling out the setup form
+    set iurl https://$::G(TARGET)/v2/info
+    set data [geturl $iurl]
+    if {![dict exists $data stackato license_accepted]} {
+	dputs "v2 info: $data"
+	return -code error "Unrecognized CF v2 platform"
+    } elseif {[string is true -strict \
+		   [dict get $data stackato license_accepted]]} {
+	puts "Stackato license: [dict get $data stackato license_accepted]"
+	return 1
+    } else {
+	set licurl https://$::G(TARGET)/v2/stackato/firstuser
+	puts "Unlicensed cloud - setting up with first user $user"
+	# dict2json does too loose quoting, so subst in straight
+	set qargs [subst {{"username": "$user", \
+			       "email": "$email", "password": "$passwd", \
+			       "org_name": "$org", "space_name": "$space", \
+			       "admin": true}}]
+	set data [geturl $licurl -method POST -type application/json \
+		      -query $qargs]
+	puts $data
+	# retry is desired with same args, but only retry once
+	if {$retry} { return [first-user {*}[lrange [info level 0] 1 5] 0] }
+    }
+    return 0
+}
+
+proc stackato {args} {
+    set code [catch {exec $::G(STACKATO) {*}$args} res]
+    if {$code} { return -code $code $res }
+    return $res
+}
+
+proc add-org {org} {
+    global G
+    if {![info exists G(ORGS)]} {
+	set G(ORGS) [json::json2dict [stackato orgs --json]]
+    }
+    if {![regexp "\\mname $org\\M" $G(ORGS)]} {
+	puts "creating organization $org"
+	# need --no-add-self, but then manage relationships?
+	stackato create-org -n --no-activate --no-add-self $org
+	stackato create-space -n --no-activate --org $org \
+	    --no-developer --no-manager $G(SPACE)
+	lappend G(ORGS) name $org
+    }
+}
+
+proc add-user {admin user email orgs} {
+    global G
+    if {![info exists G(USERS)]} {
+	set G(USERS) [json::json2dict [stackato users --json]]
+    }
+    # deal first with orgs
+    if {![llength $orgs]} {
+	# add user to self-named org if none specified
+	lappend orgs $email
+    }
+    foreach org $orgs { add-org $org }
+    if {![regexp "\\musername $user\\M" $G(USERS)]} {
+	lappend opts -n --email $email --password $::G(PASS) \
+	    --org [lindex $orgs 0]
+	if {$admin} {
+	    lappend opts --admin
+	}
+	puts "creating user $user"
+	stackato add-user {*}$opts $user
+	lappend G(USERS) username $user
+    }
+    foreach org $orgs {
+	puts "add user $user to org $org (space $G(SPACE))"
+	stackato link-user-org -n --manager $user $org
+	stackato link-user-space -n --manager --developer --org $org \
+	    $user $G(SPACE)
+    }
+}
+
+proc add-random-users {{num 100}} {
+    for {set i 0} {$i < $num} {incr i} {
+	add-user 0 random-$i random-$i@stackato.com {}
+    }
+}
+
+proc add-users {} {
+    global G
+    set users {
+	1 pyconuser0@stackato-py.con {stackato-pycon}
+	1 pyconuser1@stackato-py.con {stackato-pycon}
+	1 pyconuser2@stackato-py.con {stackato-pycon}
+	1 pyconuser3@stackato-py.con {stackato-pycon}
+	1 pyconuser4@stackato-py.con {stackato-pycon}
+	1 pyconuser5@stackato-py.con {stackato-pycon}
+	1 pyconuser6@stackato-py.con {stackato-pycon}
+	1 pyconuser7@stackato-py.con {stackato-pycon}
+	1 pyconuser8@stackato-py.con {stackato-pycon}
+	1 pyconuser9@stackato-py.con {stackato-pycon}
+	1 pyconuser10@stackato-py.con {stackato-pycon}
+	1 pyconuser11@stackato-py.con {stackato-pycon}
+	1 pyconuser12@stackato-py.con {stackato-pycon}
+	1 pyconuser13@stackato-py.con {stackato-pycon}
+	1 pyconuser14@stackato-py.con {stackato-pycon}
+	1 pyconuser15@stackato-py.con {stackato-pycon}
+	1 pyconuser16@stackato-py.con {stackato-pycon}
+	1 pyconuser17@stackato-py.con {stackato-pycon}
+	1 pyconuser18@stackato-py.con {stackato-pycon}
+	1 pyconuser19@stackato-py.con {stackato-pycon}
+	1 pyconuser20@stackato-py.con {stackato-pycon}
+	1 pyconuser21@stackato-py.con {stackato-pycon}
+	1 pyconuser22@stackato-py.con {stackato-pycon}
+	1 pyconuser23@stackato-py.con {stackato-pycon}
+	1 pyconuser24@stackato-py.con {stackato-pycon}
+	1 pyconuser25@stackato-py.con {stackato-pycon}
+	1 pyconuser26@stackato-py.con {stackato-pycon}
+	1 pyconuser27@stackato-py.con {stackato-pycon}
+	1 pyconuser28@stackato-py.con {stackato-pycon}
+	1 pyconuser29@stackato-py.con {stackato-pycon}
+	1 pyconuser30@stackato-py.con {stackato-pycon}
+	1 pyconuser31@stackato-py.con {stackato-pycon}
+	1 pyconuser32@stackato-py.con {stackato-pycon}
+	1 pyconuser33@stackato-py.con {stackato-pycon}
+	1 pyconuser34@stackato-py.con {stackato-pycon}
+	1 pyconuser35@stackato-py.con {stackato-pycon}
+	1 pyconuser36@stackato-py.con {stackato-pycon}
+	1 pyconuser37@stackato-py.con {stackato-pycon}
+	1 pyconuser38@stackato-py.con {stackato-pycon}
+	1 pyconuser39@stackato-py.con {stackato-pycon}
+	1 pyconuser40@stackato-py.con {stackato-pycon}
+	1 pyconuser41@stackato-py.con {stackato-pycon}
+	1 pyconuser42@stackato-py.con {stackato-pycon}
+	1 pyconuser43@stackato-py.con {stackato-pycon}
+	1 pyconuser44@stackato-py.con {stackato-pycon}
+	1 pyconuser45@stackato-py.con {stackato-pycon}
+	1 pyconuser46@stackato-py.con {stackato-pycon}
+	1 pyconuser47@stackato-py.con {stackato-pycon}
+	1 pyconuser48@stackato-py.con {stackato-pycon}
+	1 pyconuser49@stackato-py.con {stackato-pycon}
+
+    }
+    # short users lists
+    set _users {
+	1 jeffh@activestate.com {dev qa}
+	1 stackato@stackato.com {dev}
+	0 jeff@gmail.com {}
+    }
+
+    foreach {admin email orgs} $users {
+	set user [lindex [split $email @] 0]
+	add-user $admin $user $email $orgs
+    }
+}
+
+proc get-proj {proj} {
+    global G
+    if {![string match git:* $proj]} {
+	puts stderr "don't know how to process $proj"
+	return
+    }
+    if {![file exists $::G(GIT)]} {
+	puts stderr "no git, skipping $proj"
+	return
+    }
+    set tmp [fileutil::tempdir]
+    set dir $tmp/[file root [file tail $proj]]
+    if {[file isdirectory $dir] && ![file exists $dir/stackato.yml]} {
+	file delete -force $dir
+    }
+    if {![file isdirectory $dir]} {
+	puts "cloning $proj"
+	puts [exec $::G(GIT) clone $proj $dir]
+    }
+    set cwd [pwd]
+    cd $dir
+    puts "updating $proj in $dir"
+    catch {exec $::G(GIT) pull} msg
+    puts $msg
+    cd $cwd
+    return $dir
+}
+
+proc add-proj {id proj asproj args} {
+    set dir [get-proj $proj]
+    if {$dir eq ""} { return }
+    stackato login --email $id --password $::G(PASS)
+    set cwd [pwd]
+    cd $dir
+    puts "push $id $asproj"
+    catch {stackato delete $asproj -n}
+    catch {stackato push $asproj -n {*}$args} msg
+    puts stderr $msg
+    cd $cwd
+}
+
+proc login {} {
+    stackato login --org $::G(ORG) --space $::G(SPACE) \
+	--password $::G(PASS) $::G(USER)
+}
+
+if {![first-user $::G(USER) $::G(EMAIL) $::G(PASS) $::G(ORG) $::G(SPACE)]} {
+    puts stderr "Error: first user registration failed - stopping"
+    exit 1
+}
+
+puts "$::G(STACKATO) target $::G(TARGET)"
+puts [stackato target $::G(TARGET)]
+login
+
+add-users
+#add-random-users
+
+set SAPPS git://github.com/Stackato-Apps/
+
+set drupal ${SAPPS}drupal.git
+set node ${SAPPS}node-env.git
+set play ${SAPPS}play-chat.git
+set sinatra ${SAPPS}sinatra-rabbitmq.git
+
+#add-proj $::G(USER) $node env-1
+#add-proj stackato@stackato.com $drupal drupal --group dev
+#add-proj troyt@activestate.com $node env-dev --group dev
+#add-proj ingy@activestate.com $node env-me
+#add-proj jeff@gmail.com $sinatra sinatra-rabbit
+#add-proj srid@activestate.com $play java-play
+add-proj johnw@activestate.com $play java-play
+
+# login as the main user again
+login
+

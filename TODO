@@ -1,25 +1,39 @@
-two clusters
-finish docker setup
-users
-
-create docker instances
+build second cluster
 add docker users
-add stackato users (find script to do so?)
 
+clusters
 
-run through as much as possible
-
-build slide decks
-Include "round" questions:
-
-  name
-  company
-  job
-  cloud
-
+Include "round" questions:   name/company/job/cloud/docker/paas
 docker unveiling
 pyJVM
 8 hours vs. 3.5 hours vs. 1.5 hours
 not a product talk
 ski game
 this is not about python
+currency converter and background
+
+talk about microcloud (install vbox?)
+
+add survey
+
+ADMIN STUFF TO DO?
+
+LECTURES
+
+DEMOS
+
+hpcs stackato creation
+add to cluster
+logging
+
+WORKSHOPS
+
+1. deploy from appstore (currency)
+2. deploy from commandline
+3. docker
+4. scaling (autoscaling)
+5. SSO with apachebench (use docker system for this)
+6. admin
+7. install microcloud
+
+
